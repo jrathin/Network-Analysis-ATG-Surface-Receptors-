@@ -1,0 +1,364 @@
+---
+title: "Analysis of Interaction Network of Cell Surface Receptors in Arabidopsis thaliana"
+output: html_notebook
+---
+
+A brief report on the observations obtained by corraborating existing RNAseq datasets with the interaction data in https://www.nature.com/articles/sdata201925.
+
+## Libraries Used
+
+```{r}
+library(dplyr) # Useful functions for handling dataframes
+library(igraph) # Library for creating graph (network) objects and 'playing' with it
+library(readxl) # Read excel files (.xlsx) into a dataframe
+library(ggplot2) # Library for plotting
+library(plotly) # Creating interactive plots and graphs
+library(visNetwork) # Library to create interactive networks
+library(d3heatmap) # Create interactive heatmaps.
+```
+
+The libraries d3heatmap, visNetwork and plotly creates interactive web based graphs and networks using javascript (Point for reference). Refer corresponding R documentation pages for more information on the flexibility and functionalities of the libraries.
+
+## Datasets
+
+1. Interaction Data: https://www.nature.com/articles/sdata201925, 567 bidirectional with 170 candidate receptor kinases (LRR-RKs).
+
+2. Tissue Data (Mature Leaf and Whole Root): RNAseq data from TravaDB (http://travadb.org/) 
+
+3. Infection Data : RNAseq data of Arabidopsis thaliana infected with Pseudomonas syringae pv tomato. Timesteps at 1hr, 6hrs and 12hrs with mock, virulent and avirulent strains. Read data is in FPKM. (https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0074183#s5)
+
+4. Infection data for validation: RNAseq data of Arabidopsis thaliana infected with Pseudomonas syringae pv tomato. Timesteps between 1hr to 24hrs. Data is in raw read counts. (https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE88798)
+
+## Network Plots 
+
+```{r}
+source("Generic.R") # Contains some self-defined functions for customization
+
+
+df = read_excel("TravaDB.xlsx", sheet = 1) #Tissue Data 
+base = read_excel("Network_Cutoff_Backup.xlsx") #Interaction Data
+map = read_excel("Mapping.xlsx")  #ATG Name vs Gene Mapping
+conf = read_excel("Known_LRR-RLKs.xlsx") #Data of ATGs with possible funcitionalites (immune) with a confidence level (1 - less confidence, 2 - more confidence)
+
+base = data_norm(base, base = TRUE) #Normalizing Data Frame Title
+base = mapper(base, map)  #Mapping Gene Nicknames to ATG Names
+g = graph_from_data_frame(base, directed = FALSE, vertices = NULL)  #Constructing Interaction Network using igraph
+
+#Creating separate dataframes for tissues by averaging over biological replicates in Dataset (2) {High Correlation observed}
+a_r = data.frame(Gene = df$Gene, Value = (df$`Root (R )...7`+df$`Root (R )...76`)/2)  #Whole Root 
+a_l = data.frame(Gene = df$Gene, Value = (df$`Leaf, mature (L.lg)...18` + df$`Leaf, mature (L.lg)...87`)/2) #Mature Leaf
+
+sg_r = rest_subgraph(g, base, a_r, 1, F)  #Subgraph for Root 
+sg_l = rest_subgraph(g, base, a_l, 1, F)  #Subgraph for Leaf
+```
+
+**Note:** Communities are identified using the walktrap algorithm, extending the walk length to 8 steps. Nodesize is linearly scaled to its corresponding pagerank value. Expression cutoff is maintained at 1 FPKM. This is common to all networks unless mentioned otherwise. 
+
+**Network Plot 1:** Whole Interaction Network. 
+
+```{r}
+cg = cluster_walktrap(g, steps = 8)
+prg = page_rank(g, directed = F)
+visPlot(g, cg$membership, prg$vector)
+```
+
+**Network Plot 1a:** Whole Interaction Network. Highlighted nodes are ones whose immune-related functionalities are known to a higher confidence (Level = 2)
+
+```{r}
+d = k_list(g,conf,2) #Retreive Genes with confidence level = 2 and in the interaction network
+visPlot(g,d,prg$vector) #Highlight retreived genes in the network
+```
+
+**Network Plot 2:** Interaction Network, limited to nodes expressed in data (2) for whole root.
+
+```{r}
+c_r = cluster_walktrap(sg_r, steps = 8)
+pr_r = page_rank(sg_r, directed = F)
+visPlot(sg_r, c_r$membership, pr_r$vector)
+```
+
+**Network Plot 2a:** Interaction Network limited to data (2) for whole root. Highlighted nodes are known to have immune-related function to a higher confidence (level = 2)
+
+```{r}
+d = k_list(sg_r,conf,2)
+visPlot(subgraph = sg_r,communities = d,nodesize = pr_r$vector)
+```
+
+**Network Plot 3:** Interaction Network, limited to nodes expressed in data (2) for mature leaf.
+```{r}
+c_l = cluster_walktrap(sg_l, steps = 8)
+pr_l = page_rank(sg_l, directed = F)
+visPlot(sg_l, c_l$membership, pr_l$vector)
+```
+
+**Network Plot 3a:** Interaction Network limited to data (2) for mature leaf. Highlighted nodes are known to have immune-related function to a higher confidence (level = 2)
+
+```{r}
+d = k_list(sg_l,conf,2)
+visPlot(subgraph = sg_l,communities = d,nodesize = pr_l$vector)
+```
+
+### Observations:
+1. Most of the immune-related LRR-RKs fall in the same dense cluster.
+2. It is possible to hypothesise, by considering community similiarity and the denseness of the cluster interactions, this cluster could house a variety of receptors having potential immune functionalities.
+3. Important nodes, in terms of authority scores, are also housed in this cluster. The authority score of a node reflects how many connections it has to hubs. In this notation, 'Hubs' are nodes which have a higher 'hub score'. A node has a higher hub score if it points to more authorities. A loose analogy would be - an authority is a node with the information we are seeking and a hub is a node which points you to such authorities. This is an interesting material for reference on hubs and authorities and the HITS algorithm - https://nlp.stanford.edu/IR-book/html/htmledition/hubs-and-authorities-1.html. 
+
+Proceeding with Observation 3, the network plots for the tissue restricted networks with authoritative nodes highlighted follows. The cutoff for the authority score is set at 0.5 and the scores for each node ranges from [0,1].
+
+**Network Plot 2b:** Root Restricted with authoritative nodes highlighted
+
+```{r}
+auth_r = authority_score(sg_r)
+auth_r = data_frame(Gene = names(auth_r$vector), Value = auth_r$vector)
+comm = V(sg_r)$name %in% auth_r$Gene[auth_r$Value>0.5]
+comm = comm + 1
+visPlot(sg_r, comm, pr_r$vector)
+```
+
+**Network Plot 3b:** Leaf Restricted with authoritative nodes highlighted
+
+```{r}
+auth_l = authority_score(sg_l)
+auth_l = data_frame(Gene = names(auth_l$vector), Value = auth_l$vector)
+comm = V(sg_l)$name %in% auth_l$Gene[auth_l$Value>0.5]
+comm = comm + 1
+visPlot(sg_l, comm, pr_l$vector)
+```
+
+Same plots, but with hub scores instead.
+
+**Network Plot 2c:** Root Restricted with hub nodes highlighted
+
+```{r}
+hub_r = hub_score(sg_r)
+hub_r = data_frame(Gene = names(hub_r$vector), Value = hub_r$vector)
+comm = V(sg_r)$name %in% hub_r$Gene[hub_r$Value>0.5]
+comm = comm + 1
+visPlot(sg_r, comm, pr_r$vector)
+```
+
+**Network Plot 3c:** Leaf Restricted with hub nodes highlighted
+
+```{r}
+hub_l = hub_score(sg_l)
+hub_l = data_frame(Gene = names(hub_l$vector), Value = hub_l$vector)
+comm = V(sg_l)$name %in% hub_l$Gene[hub_l$Value>0.5]
+comm = comm + 1
+visPlot(sg_l, comm, pr_l$vector)
+```
+
+An extension of observation 3 is the fact that the set of hubs and authorities of the restricted networks have a high intersection between them. That is, the nodes which are the authorites are also the hubs. This potentially indicates the presence of important nodes in the cluster in consideration and they are routed among themselves.
+
+### Difference Plot - Root vs Leaf:
+
+Difference networks are read as follows. The union of the nodes in both the networks in consideration are included in the difference network. Edges coloured black are ones in Network #1 and not in Network #2 and the edges coloured red are edges in #2 but not in #1.
+
+```{r}
+diff = diff_plot(sg_r, sg_l) # Root is the first network and Leaf is the second
+comm = high_nodes(diff, V(sg_l)$name[!(V(sg_l)$name %in% V(sg_r)$name)]) #Nodes in leaf but not in root are highlighted
+visPlot2(diff, E(diff)$type1, v_comm = comm, nodesize = page_rank(diff, directed = F)$vector)
+```
+
+### Observations:
+
+## Infection Time-Series Data (Pseudomonas syringae pv tomato):
+
+Dataset (3) is used for the time-course analysis presented. The timesteps at which RNAseq data was collected were at 1hr, 6hrs and 12 hrs. 
+
+```{r}
+df = read_excel("infection_data.xlsx", sheet = 2) #Infection Data
+#Averaging over biological replicates (Strong Correlation)
+mock_1 = (df$Sample_1 + df$Sample_13)/2
+mock_6 = (df$Sample_7 + df$Sample_19)/2
+mock_12 = (df$Sample_10 + df$Sample_22)/2
+avir_1 = (df$Sample_2 + df$Sample_14)/2
+avir_6 = (df$Sample_8 + df$Sample_20)/2
+avir_12 = (df$Sample_11 + df$Sample_23)/2
+vir_1 = (df$Sample_3 + df$Sample_15)/2
+vir_6 = (df$Sample_9 + df$Sample_21)/2
+vir_12 = (df$Sample_12 + df$Sample_24)/2
+av_df = data_frame(Gene = toupper(df$Gene), mock_1 = mock_1, mock_6 = mock_6, mock_12 = mock_12, avir_1 = avir_1, avir_6 = avir_6, avir_12 = avir_12, vir_1 = vir_1, vir_6 = vir_6, vir_12 = vir_12)
+```
+
+
+**Infection at 1hr:** The restricted interaction plot to the genes expressed after 1hr of infection
+
+```{r}
+#Virulent Expressed at Timestep 1 (Highlighted nodes are expressed at TS 1 but not at TS 6)
+temp_df1 = data_frame(Gene = av_df$Gene, Value = av_df$vir_1)
+v_1 = rest_subgraph(g, base, temp_df1, 1)
+tlist_1_6 = intersect(V(v_1)$name, av_df$Gene[(av_df$vir_1>=1) & (av_df$vir_6<1)])
+visPlot(v_1, high_nodes(v_1,tlist_1_6), page_rank(v_1,directed=F)$vector)
+```
+
+**Infection at 6hrs:** The restricted interaction plot to the genes expressed after 6hrs of infection
+
+```{r}
+#Virulent Expressed at Timestep 6 (Highlighted nodes are expressed at TS 6 but not at TS 1)
+temp_df6 = data_frame(Gene = av_df$Gene, Value = av_df$vir_6)
+v_6 = rest_subgraph(g, base, temp_df6, 1)
+tlist_6_1 = intersect(V(v_6)$name, av_df$Gene[(av_df$vir_1<1) & (av_df$vir_6>=1)])
+visPlot(v_6, high_nodes(v_6,tlist_6_1), page_rank(v_6,directed=F)$vector)
+```
+
+**Infection at 12hrs:** The restricted interaction plot to the genes expressed after 12hrs of infection
+
+```{r}
+#Virulent Expressed at Timestep 12 
+temp_df12 = data_frame(Gene = av_df$Gene, Value = av_df$vir_12)
+v_12 = rest_subgraph(g, base, temp_df12, 1)
+visPlot(v_12, nodesize =  page_rank(v_12,directed=F)$vector)
+```
+
+### Difference Plots between Time-Steps
+
+**Difference Plot b/w TS 1 and 6:** 
+
+```{r}
+diff_1 = diff_plot(v_1,v_6)
+visPlot2(diff_1, E(diff_1)$type1, nodesize = page_rank(diff_1,directed=F)$vector)
+```
+
+**Difference Plot b/w TS 6 and 12:** 
+
+```{r}
+diff_6 = diff_plot(v_6,v_12)
+visPlot2(diff_6, E(diff_6)$type1, nodesize = page_rank(diff_6,directed=F)$vector)
+```
+
+### Observations:
+
+**Genes which are OFF at TS 1, ON at TS 6 and OFF again at TS 12**
+
+1. AT1G08590
+2. AT5G07180
+3. AT5G51560
+
+Validation with Dataset (4) follows:
+
+```{r}
+df_v = read.table("RCT.txt", header = T) #Infection Data Validation
+d = data.frame(Gene = av_df$Gene[av_df$vir_1<1 & av_df$vir_6>=1 & av_df$vir_12<1])
+dat_csv = data.matrix(read.csv("Data_1_Vir.csv", row.names = 1))
+temp_1 = dat_csv[rownames(dat_csv) %in% intersect(V(g)$name,d$Gene),]
+d3heatmap(temp_1[,c(1:5)],color = "Blues", dendrogram = "none")
+```
+
+The validation dataset (4) has incomplete data for gene AT1G08590, but it shows conclusively that the trend is validated. Over the course of infection, the listed genes have a spike in expression levels which drop after time. 
+
+Extending with the previous observation,
+
+**Genes which are OFF at TS 1 but ON at TS 6:**
+
+(Refer the heatmap below)
+
+Validation with Dataset (4):
+
+```{r}
+d = data.frame(Gene = av_df$Gene[av_df$vir_1<1 & av_df$vir_6>=1])
+dat_csv = data.matrix(read.csv("Data_1_Vir.csv", row.names = 1))
+temp_2 = dat_csv[rownames(dat_csv) %in% intersect(V(g)$name,d$Gene),]
+d3heatmap(temp_2[,c(6:10)],color = "Blues", dendrogram = "none")
+```
+
+This heatmap gives the inference that the expression levels of Genes which are OFF at TS 1 and ON at TS 6 go on to drop over the course of time, validated by dataset (4) {AT1G55610 might be an outlier}. In essence, most of genes which are expressed at TS 6 after being OFF at TS 1 turn OFF again at a future timestep.
+
+**Genes which are ON at TS 1 but OFF at TS 6:**
+
+1. AT2G23300
+2. AT3G47090
+3. AT4G18640
+4. AT4G20140
+5. AT5G59680
+
+***Validation:***
+
+```{r}
+d = data.frame(Gene = av_df$Gene[av_df$vir_1>=1 & av_df$vir_6<1])
+dat_csv = data.matrix(read.csv("Data_1_Vir.csv", row.names = 1))
+temp_2 = dat_csv[rownames(dat_csv) %in% intersect(V(g)$name,d$Gene),]
+d3heatmap(temp_2[,c(1:5)],color = "Blues", dendrogram = "none")
+```
+
+High contradiction in the observation with the validation dataset. Only AT2G23300 and AT4G20140 (GSO1) show correlation to the observations in dataset (3). The latter is a gene of potentially high importance due to its high (betweenness) centrality score. 
+
+More observations on potential genes in community shift mentioned in attached word document.
+
+### Time Course Analysis
+
+### Mock vs Virulent at corresponding TS
+
+Comparison of Virulent and Mock networks at corresponding timesteps. Difference network b/w the corresponding is plotted. The following heatmaps after each difference plot project the trend of expression levels in the validation dataset for genes of particular interest at each timestep.
+
+```{r}
+#Load data and create the corresponding subgraphs for mock at different TS
+temp_df = data.frame(Gene = av_df$Gene, Value = av_df$mock_1)
+mock_1 = rest_subgraph(g, base, temp_df, 1)
+
+temp_df = data.frame(Gene = av_df$Gene, Value = av_df$mock_6)
+mock_6 = rest_subgraph(g, base, temp_df, 1)
+
+temp_df = data.frame(Gene = av_df$Gene, Value = av_df$mock_12)
+mock_12 = rest_subgraph(g, base, temp_df, 1)
+```
+
+
+**Virulent vs Mock at TS 1:**
+
+```{r}
+#Virulent vs Mock (TS 1)
+mv_1 = diff_plot(v_1,mock_1)
+visPlot2(mv_1, E(mv_1)$type1, nodesize = page_rank(mv_1,directed=F)$vector)
+```
+
+**Project genes expressed in Vir 1 but not in Mock 1:**
+```{r}
+d = data.frame(Gene = av_df$Gene[av_df$vir_1>=1 & av_df$mock_1<1])
+dat_csv = data.matrix(read.csv("Data_1_Vir.csv", row.names = 1))
+temp_3 = dat_csv[rownames(dat_csv) %in% intersect(V(g)$name,d$Gene),]
+d3heatmap(temp_3[,c(6:10)],color = "Blues", dendrogram = "none")
+```
+
+**Project genes expressed in Mock 1 but not in Vir 1:**
+```{r}
+d = data.frame(Gene = av_df$Gene[av_df$vir_1<1 & av_df$mock_1>=1])
+dat_csv = data.matrix(read.csv("Data_1_Vir.csv", row.names = 1))
+temp_4 = dat_csv[rownames(dat_csv) %in% intersect(V(g)$name,d$Gene),]
+d3heatmap(temp_4[,c(1:5)],color = "Blues", dendrogram = "none")
+```
+
+**Virulent vs Mock at TS 6:**
+
+```{r}
+#Virulent vs Mock (TS 6)
+mv_6 = diff_plot(v_6,mock_6)
+visPlot2(mv_6, E(mv_6)$type1, nodesize = page_rank(mv_6,directed=F)$vector)
+```
+
+**Project genes expressed in Vir 6 but not in Mock 6:**
+```{r}
+d = data.frame(Gene = av_df$Gene[av_df$vir_6>=1 & av_df$mock_6<1])
+dat_csv = data.matrix(read.csv("Data_1_Vir.csv", row.names = 1))
+temp_5 = dat_csv[rownames(dat_csv) %in% intersect(V(g)$name,d$Gene),]
+d3heatmap(temp_5[,c(6:10)],color = "Blues", dendrogram = "none")
+```
+
+Note: There is no observed gene expressed at mock 6 but not in virulent 6, having the expression cutoff at 1 FPKM.
+
+**Virulent vs Mock at TS 12:**
+
+```{r}
+#Virulent vs Mock (TS 12)
+mv_12 = diff_plot(v_12,mock_12)
+visPlot2(mv_12, E(mv_12)$type1, nodesize = page_rank(mv_12,directed=F)$vector)
+```
+
+**Project genes expressed in Mock 12 but not in Vir 12:**
+```{r}
+d = data.frame(Gene = av_df$Gene[av_df$vir_12<1 & av_df$mock_12>=1])
+dat_csv = data.matrix(read.csv("Data_1_Vir.csv", row.names = 1))
+temp_7 = dat_csv[rownames(dat_csv) %in% intersect(V(g)$name,d$Gene),]
+d3heatmap(temp_7[,c(6:10)],color = "Blues", dendrogram = "none")
+```
+
+Note: There is no observed gene expressed at virulent 12 but not in mock 12, having the expression cutoff at 1 FPKM.

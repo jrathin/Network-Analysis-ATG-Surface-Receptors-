@@ -1,0 +1,172 @@
+---
+title: Arabidopsis Thaliana Mature Leaf and Whole Root Surface Receptors Interaction
+  Plots
+output:
+  html_notebook: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r}
+#File Containing self-defined functions for customization
+source("Generic.R")
+
+df = read_excel("TravaDB.xlsx", sheet = 1) #Tissue Data 
+base = read_excel("Network_Cutoff_Backup.xlsx") #Interaction Data
+map = read_excel("Mapping.xlsx")  #Gene Name Mapping Data
+conf = read_excel("Known_LRR-RLKs.xlsx")
+
+base = data_norm(base, base = TRUE) #Normalizing Data Frame Title
+base = mapper(base, map)  #Mapping Gene Nicknames to Names
+g = graph_from_data_frame(base, directed = FALSE, vertices = NULL)  #Constructing Interaction Network
+
+a_r = data.frame(Gene = df$Gene, Value = (df$`Root (R )...7`+df$`Root (R )...76`)/2)  #Whole Root 
+a_l = data.frame(Gene = df$Gene, Value = (df$`Leaf, mature (L.lg)...18` + df$`Leaf, mature (L.lg)...87`)/2) #Leaf
+
+sg1 = rest_subgraph(g, base, a_r, 1, F)  #Subgraph for Root
+sg2 = rest_subgraph(g, base, a_l, 1, F)  #Subgraph for Leaf
+
+#Essential Parameters of the Subgraph
+cg = cluster_walktrap(g, steps = 8)
+c1 = cluster_walktrap(sg1, steps = 8)
+c2 = cluster_walktrap(sg2, steps = 8)
+
+prg = page_rank(g, directed = F)
+pr1 = page_rank(sg1, directed = F)
+pr2 = page_rank(sg2, directed = F)
+
+b = betweenness(g, directed = F)
+b1 = betweenness(sg1, directed = F)
+b2 = betweenness(sg2, directed = F)
+
+d = Degree = degree(g)
+d1 = Degree = degree(sg1)
+d2 = Degree = degree(sg2)
+
+auth = authority_score(g)
+auth1 = authority_score(sg1)
+auth2 = authority_score(sg2)
+
+```
+```{r}
+#Original Network
+show(visPlot(g, cg$membership, prg$vector))
+```
+
+
+```{r}
+#Plot: FPKM Whole Root over 2 samples
+ggplot(df, aes(x=`Root (R )...7`,y=`Root (R )...76`))+geom_point()+theme_bw() + stat_smooth(aes(group=1), method = "lm",color="red",se=F)
+```
+
+
+```{r}
+#Plot: FPKM Mature Leaf over 2 samples
+ggplot(df, aes(x=`Leaf, mature (L.lg)...18`,y=`Leaf, mature (L.lg)...87`))+geom_point()+theme_bw() +stat_smooth(aes(group=1), method = "lm",color="red",se=F)
+```
+
+
+```{r}
+#Histogram of FPKM Distribution: Whole Root (Averaged)
+ggplot(a_r,aes(x=Value))+geom_histogram(bins = 100)+theme_bw()
+```
+
+
+```{r}
+#Histogram of FPKM Distribution: Mature Leaf (Averaged)
+ggplot(a_l,aes(x=Value))+geom_histogram(bins = 100)+theme_bw()
+```
+
+
+```{r}
+#Network: Whole Root Restricted
+show(visPlot(sg1, c1$membership, pr1$vector))
+```
+
+
+```{r}
+#Network: Mature Leaf Restricted
+show(visPlot(sg2, c2$membership, pr2$vector))
+```
+
+
+```{r}
+#Plot: Pagerank Values of Gene in Whole Root Restricted vs Pagerank in Base Network
+comp1 = data.frame(Parent = prg$vector[names(prg$vector) %in% names(pr1$vector)], Restricted = pr1$vector)
+Gene = rownames(comp1)
+plt = ggplot(comp1, aes(x=Parent,y=Restricted,name=Gene)) + geom_point() + theme_bw() + stat_smooth(aes(group=1), method = "lm",color="red",se=F)
+ggplotly(plt)
+```
+
+
+```{r}
+#Plot: Pagerank Values of Gene in Mature Leaf Restricted vs Pagerank in Base Network
+comp2 = data.frame(Parent = prg$vector[names(prg$vector) %in% names(pr2$vector)], Restricted = pr2$vector)
+Gene = rownames(comp2)
+plt = ggplot(comp2, aes(x=Parent,y=Restricted,name=Gene)) + geom_point() + theme_bw() + stat_smooth(aes(group=1), method = "lm",color="red",se=F)
+ggplotly(plt)
+```
+
+
+```{r}
+#Plot: Degree of Gene in Whole Root Restricted vs Degree in Base Network
+temp1 = data.frame(Degree_Initial = d[names(d) %in% names(d1)], Degree_Restricted = d1)
+Gene1 = names(d1)
+plt = ggplot(temp1, aes(x = Degree_Initial, y=Degree_Restricted,name=Gene1)) + geom_point( position=position_jitter(width=1,height=.5)) + theme_bw() + stat_smooth(aes(group=1), method = "lm",color="red",se=F)
+ggplotly(plt)
+```
+
+
+```{r}
+#Plot: Degree of Gene in Mature Leaf Restricted vs Degree in Base Network 
+temp2 = data.frame(Degree_Initial = d[names(d) %in% names(d2)], Degree_Restricted = d2)
+Gene2 = names(d2)
+plt = ggplot(temp2, aes(x = Degree_Initial, y=Degree_Restricted,name=Gene2)) + geom_point( position=position_jitter(width=1,height=.5)) + theme_bw() + stat_smooth(aes(group=1), method = "lm",color="red",se=F)
+ggplotly(plt)
+```
+
+```{r}
+d = k_list(g,conf,2)
+visPlot(g,d,prg$vector)
+```
+
+```{r}
+d = k_list(sg1,conf,2)
+visPlot(subgraph = sg1,communities = d,nodesize = pr1$vector)
+```
+
+```{r}
+d = k_list(sg2,conf,2)
+visPlot(sg2,d,pr2$vector)
+```
+
+```{r}
+auth_t1 = data_frame(Gene = names(auth1$vector), Value = auth1$vector)
+plt = ggplot(auth_t1, aes(x=Value))+geom_histogram(bins=100)+theme_bw()
+ggplotly(plt)
+```
+```{r}
+auth_t2 = data_frame(Gene = names(auth2$vector), Value = auth2$vector)
+plt = ggplot(auth_t2, aes(x=Value))+geom_histogram(bins=100)+theme_bw()
+ggplotly(plt)
+```
+
+```{r}
+comm = V(sg1)$name %in% auth_t1$Gene[auth_t1$Value>0.5]
+comm = 1*comm + 1
+visPlot(sg1, comm, pr1$vector)
+```
+
+```{r}
+comm = V(sg2)$name %in% auth_t2$Gene[auth_t2$Value>0.5]
+comm = 1*comm + 1
+visPlot(sg2, comm, pr2$vector)
+```
+
+
+```{r}
+tg = diff_plot(sg1,sg2)
+visPlot2(tg,communities = E(tg)$type1,nodesize = page_rank(tg)$vector)
+```
+

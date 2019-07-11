@@ -1,0 +1,169 @@
+---
+title: "Sample_Bot"
+output: html_notebook
+---
+
+
+```{r}
+source("Generic.R")
+library(timeordered)
+
+df = read.table("RCT.txt", header = T) #Infection Data 
+base = read_excel("Network_Cutoff_Backup.xlsx") #Interaction Data
+map = read_excel("Mapping.xlsx")  #Gene Name Mapping Data
+conf = read_excel("Known_LRR-RLKs.xlsx")
+
+base = data_norm(base, base = TRUE) #Normalizing Data Frame Title
+base = mapper(base, map)  #Mapping Gene Nicknames to Names
+g = graph_from_data_frame(base, directed = FALSE, vertices = NULL)  #Constructing Interaction Network
+```
+
+
+```{r}
+#Virulent Expressed at Timestep 1
+temp_df1 = data_frame(Gene = df$Gene, Value = df$x01_Col_02_EV_01h_rep01)
+tsg1 = rest_subgraph(g, base, temp_df1, 21)
+visPlot(tsg1, k_list(tsg1,conf,2), page_rank(tsg1,directed=F)$vector)
+```
+
+
+```{r}
+#Virulent Expressed at Timestep 6
+temp_df2 = data_frame(Gene = df$Gene, Value = df$x01_Col_02_EV_06h_rep01)
+tsg2 = rest_subgraph(g, base, temp_df2, 21)
+visPlot(tsg2, k_list(tsg2,conf,2), page_rank(tsg2,directed=F)$vector)
+```
+
+```{r}
+#Virulent Expressed at Timestep 12
+temp_df3 = data_frame(Gene = df$Gene, Value = df$x01_Col_02_EV_12h_rep01)
+tsg3 = rest_subgraph(g, base, temp_df3, 21)
+visPlot(tsg3, k_list(tsg3,conf,2), page_rank(tsg3,directed=F)$vector)
+```
+
+```{r}
+#Virulent Expressed at Timestep 16
+temp_df4 = data_frame(Gene = df$Gene, Value = df$x01_Col_02_EV_16h_rep01)
+tsg4 = rest_subgraph(g, base, temp_df4, 21)
+visPlot(tsg4, k_list(tsg4,conf,2), page_rank(tsg4,directed=F)$vector)
+```
+
+```{r}
+#Virulent Expressed at Timestep 24
+temp_df5 = data_frame(Gene = df$Gene, Value = df$x01_Col_02_EV_24h_rep01)
+tsg5 = rest_subgraph(g, base, temp_df2, 21)
+visPlot(tsg5, k_list(tsg5,conf,2), page_rank(tsg5,directed=F)$vector)
+```
+
+```{r}
+#Difference Plot (Time 1 vs Time 6) (Red Edges are new edges in later timestep) (Yellow nodes show known LRR_RLKs)
+diff1 = diff_plot(tsg1,tsg2)
+d1 = k_list(diff1, conf, 2)
+visPlot2(diff1,E(diff1)$type1,nodesize = page_rank(diff1,directed=F)$vector,v_comm = d1)
+```
+
+```{r}
+#Difference Plot (Time 6 vs Time 12) (Red Edges are new edges in later timestep) (Yellow nodes show known LRR_RLKs)
+diff2 = diff_plot(tsg2,tsg3)
+d2 = k_list(diff2, conf, 2)
+visPlot2(diff2,E(diff2)$type1,nodesize = page_rank(diff2,directed=F)$vector,v_comm = d2)
+```
+
+
+```{r}
+#Difference Plot (Time 12 vs Time 16) (Red Edges are new edges in later timestep) (Yellow nodes show known LRR_RLKs)
+diff3 = diff_plot(tsg3,tsg4)
+d3 = k_list(diff3, conf, 2)
+visPlot2(diff3,E(diff3)$type1,nodesize = page_rank(diff3,directed=F)$vector,v_comm = d3)
+```
+
+```{r}
+#Difference Plot (Time 16 vs Time 24) (Red Edges are new edges in later timestep) (Yellow nodes show known LRR_RLKs)
+diff4 = diff_plot(tsg4,tsg5)
+d4 = k_list(diff4, conf, 2)
+visPlot2(diff4,E(diff4)$type1,nodesize = page_rank(diff4,directed=F)$vector,v_comm = d4)
+```
+
+```{r}
+#Switched ON at Timestep 6 and OFF at TS 1
+pot_list = df$Gene[(df$x01_Col_02_EV_01h_rep01<21) & (df$x01_Col_02_EV_06h_rep01>=21)]
+switch_genes_12 = intersect(pot_list, V(tsg2)$name)
+visPlot(tsg2, high_nodes(tsg2,switch_genes_12), page_rank(tsg2,directed=F)$vector)
+```
+
+
+```{r}
+#Switched OFF at Timestep 6 but ON at TS 1
+pot_list2 = df$Gene[(df$x01_Col_02_EV_06h_rep01<21) & (df$x01_Col_02_EV_01h_rep01>=21)]
+switch_genes_21 = intersect(pot_list2, V(tsg1)$name)
+visPlot(tsg1, high_nodes(tsg1,switch_genes_21), page_rank(tsg1,directed=F)$vector)
+```
+
+```{r}
+#Switched ON at Timestep 12 but OFF at TS 6
+pot_list3 = df$Gene[(df$x01_Col_02_EV_12h_rep01>=21) & (df$x01_Col_02_EV_06h_rep01<21)]
+switch_genes_23 = intersect(pot_list3, V(tsg3)$name)
+visPlot(tsg3, high_nodes(tsg3,switch_genes_23), page_rank(tsg3,directed=F)$vector)
+```
+
+```{r}
+#Switched OFF at Timestep 12 but ON at TS 6
+pot_list4 = df$Gene[(df$x01_Col_02_EV_12h_rep01<21) & (df$x01_Col_02_EV_06h_rep01>=21)]
+switch_genes_32 = intersect(pot_list4, V(tsg2)$name)
+visPlot(tsg2, high_nodes(tsg2,switch_genes_32), page_rank(tsg2,directed=F)$vector)
+```
+
+```{r}
+#Switched ON at Timestep 16 but OFF at TS 12
+pot_list = df$Gene[(df$x01_Col_02_EV_16h_rep01>=21) & (df$x01_Col_02_EV_12h_rep01<21)]
+switch_genes_34 = intersect(pot_list, V(tsg4)$name)
+visPlot(tsg4, high_nodes(tsg4,switch_genes_34), page_rank(tsg4,directed=F)$vector)
+```
+
+```{r}
+#Switched OFF at Timestep 16 but ON at TS 12
+pot_list = df$Gene[(df$x01_Col_02_EV_16h_rep01<21) & (df$x01_Col_02_EV_12h_rep01>=21)]
+switch_genes_43 = intersect(pot_list, V(tsg3)$name)
+visPlot(tsg3, high_nodes(tsg3,switch_genes_43), page_rank(tsg3,directed=F)$vector)
+```
+
+```{r}
+#Switched ON at Timestep 24 but OFF at TS 16
+pot_list = df$Gene[(df$x01_Col_02_EV_24h_rep01>=21) & (df$x01_Col_02_EV_16h_rep01<21)]
+switch_genes_45 = intersect(pot_list, V(tsg5)$name)
+visPlot(tsg5, high_nodes(tsg5,switch_genes_45), page_rank(tsg5,directed=F)$vector)
+```
+
+```{r}
+#Switched ON at Timestep 16 but OFF at TS 24
+pot_list = df$Gene[(df$x01_Col_02_EV_16h_rep01>=21) & (df$x01_Col_02_EV_24h_rep01<21)]
+switch_genes_54 = intersect(pot_list, V(tsg4)$name)
+visPlot(tsg4, high_nodes(tsg4,switch_genes_54), page_rank(tsg4,directed=F)$vector)
+```
+
+```{r}
+#Gene Expression Levels (OFF at TS 1 and ON at TS 6 according to initial data)
+d = data.frame(Gene = V(g)$name)
+dat_csv = data.matrix(read.csv("data_1_Vir.csv", row.names = 1))
+temp1 = dat_csv[rownames(dat_csv) %in% intersect(d$Gene, av_df$Gene[av_df$vir_1<1 & av_df$vir_6>=1]),]
+d3heatmap(temp1[,c(6:10)],color = "Blues", dendrogram = "none")
+```
+
+```{r}
+#Gene Expression Levels (ON at TS 1 and OFF at TS 6 according to initial data)
+d = data.frame(Gene = V(g)$name)
+dat_csv = data.matrix(read.csv("data_1_Vir.csv", row.names = 1))
+temp1 = dat_csv[rownames(dat_csv) %in% intersect(d$Gene, av_df$Gene[av_df$vir_1>=1 & av_df$vir_6<1]),]
+d3heatmap(temp1[,c(6:10)],color = "Blues", dendrogram = "none")
+```
+
+
+```{r}
+#Gene Expression Levels (OFF at TS 1 and OFF again at TS 12 according to initial data)
+d = data.frame(Gene = V(g)$name)
+dat_csv = data.matrix(read.csv("data_1_Vir.csv", row.names = 1))
+temp1 = dat_csv[rownames(dat_csv) %in% intersect(d$Gene, av_df$Gene[av_df$vir_1<1 & av_df$vir_12<1]),]
+d3heatmap(temp1[,c(1:5)],color = "Blues", dendrogram = "none")
+```
+
+

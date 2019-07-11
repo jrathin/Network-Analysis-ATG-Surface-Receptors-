@@ -1,0 +1,173 @@
+---
+title: "Infection Data"
+output: html_notebook
+---
+
+```{r}
+source("Generic.R")
+library(timeordered)
+
+df = read_excel("infection_data.xlsx", sheet = 2) #Infection Data 
+base = read_excel("Network_Cutoff_Backup.xlsx") #Interaction Data
+map = read_excel("Mapping.xlsx")  #Gene Name Mapping Data
+conf = read_excel("Known_LRR-RLKs.xlsx")
+
+base = data_norm(base, base = TRUE) #Normalizing Data Frame Title
+base = mapper(base, map)  #Mapping Gene Nicknames to Names
+g = graph_from_data_frame(base, directed = FALSE, vertices = NULL)  #Constructing Interaction Network
+```
+
+```{r}
+mock_1 = (df$Sample_1 + df$Sample_13)/2
+mock_6 = (df$Sample_7 + df$Sample_19)/2
+mock_12 = (df$Sample_10 + df$Sample_22)/2
+avir_1 = (df$Sample_2 + df$Sample_14)/2
+avir_6 = (df$Sample_8 + df$Sample_20)/2
+avir_12 = (df$Sample_11 + df$Sample_23)/2
+vir_1 = (df$Sample_3 + df$Sample_15)/2
+vir_6 = (df$Sample_9 + df$Sample_21)/2
+vir_12 = (df$Sample_12 + df$Sample_24)/2
+av_df = data_frame(Gene = toupper(df$Gene), mock_1 = mock_1, mock_6 = mock_6, mock_12 = mock_12, avir_1 = avir_1, avir_6 = avir_6, avir_12 = avir_12, vir_1 = vir_1, vir_6 = vir_6, vir_12 = vir_12)
+```
+
+
+```{r}
+#Virulent Expressed at Timestep 1 (Yellow nodes show known LRR_RLKs)
+temp_df1 = data_frame(Gene = av_df$Gene, Value = av_df$vir_1)
+v_1 = rest_subgraph(g, base, temp_df1, 1)
+#visPlot(v_1, cluster_walktrap(v_1,steps=8)$membership, page_rank(v_1,directed=F)$vector)
+visPlot(v_1, k_list(v_1,conf,2), page_rank(v_1,directed=F)$vector)
+```
+
+
+```{r}
+#Virulent Expressed at Timestep 6 (Yellow nodes show known LRR_RLKs)
+temp_df2 = data_frame(Gene = av_df$Gene, Value = av_df$vir_6)
+v_6 = rest_subgraph(g, base, temp_df2, 1)
+#visPlot(v_6, cluster_walktrap(v_6,steps=8)$membership, page_rank(v_6,directed=F)$vector)
+visPlot(v_6, k_list(v_6,conf,2), page_rank(v_6,directed=F)$vector)
+```
+
+```{r}
+#Virulent Expressed at Timestep 12 (Yellow nodes show known LRR_RLKs)
+temp_df3 = data_frame(Gene = av_df$Gene, Value = av_df$vir_12)
+v_12 = rest_subgraph(g, base, temp_df3, 1)
+#visPlot(v_12, cluster_walktrap(v_12,steps=8)$membership, page_rank(v_12,directed=F)$vector)
+visPlot(v_12, k_list(v_12,conf,2), page_rank(v_12,directed=F)$vector)
+```
+
+
+```{r}
+#Difference Plot (Time 1 vs Time 6) (Red Edges are new edges in later timestep) (Yellow nodes show known LRR_RLKs)
+diff1 = diff_plot(v_1,v_6)
+d1 = k_list(diff1, conf, 2)
+visPlot2(diff1,E(diff1)$type1,nodesize = page_rank(diff1,directed=F)$vector,v_comm = d1)
+```
+
+
+```{r}
+#Difference Plot (Time 6 vs Time 12) (Red Edges are new edges in later timestep) (Yellow nodes show known LRR_RLKs)
+diff2 = diff_plot(v_6,v_12)
+d2 = k_list(diff2, conf, 2)
+visPlot2(diff2,E(diff2)$type1,nodesize = page_rank(diff2,directed=F)$vector, v_comm = d2)
+```
+
+```{r}
+#Difference Plot (Blue Nodes are Genes with high expression ratio Time 1 vs Time 6) (1.5)
+tlist1 = intersect(V(diff1)$name, av_df$Gene[av_df$vir_6/av_df$vir_1>1.5])
+visPlot2(diff1, E(diff1)$type1, v_comm = high_nodes(diff1,tlist1), nodesize = page_rank(diff1,directed=F)$vector)
+```
+
+
+```{r}
+#Difference Plot (Yellow Nodes are Genes with dropped expression ratio Time 6 vs Time 12) (1.5)
+tlist2 = intersect(V(diff2)$name, av_df$Gene[av_df$vir_6/av_df$vir_12>1.5])
+visPlot2(diff2, E(diff2)$type1, v_comm = high_nodes(diff2,tlist2), nodesize = page_rank(diff2,directed=F)$vector)
+```
+
+
+```{r}
+#Gene Expression Levels
+d = data.frame(Gene = av_df$Gene[av_df$vir_1<1 & av_df$vir_6>=1 & av_df$vir_12<1])
+dat_csv = data.matrix(read.csv("data.csv", row.names = 1))
+temp1 = dat_csv[rownames(dat_csv) %in% intersect(V(g)$name,d$Gene),]
+d3heatmap(temp1[,c(7,8,9)],color = "Blues", dendrogram = "none")
+```
+```{r}
+#Switched ON at Timestep 6 and switched OFF at Timestep 12 (Threshold = 1 FPKM)
+pot_list = av_df$Gene[(av_df$vir_1<1) & (av_df$vir_6>=1) & (av_df$vir_12<1)]
+switch_genes = intersect(pot_list, V(v_6)$name)
+visPlot(v_6, high_nodes(v_6,switch_genes), page_rank(v_6,directed=F)$vector)
+```
+
+```{r}
+#Switched ON at Timestep 6 (Threshold = 1 FPKM)
+pot_list1 = av_df$Gene[(av_df$vir_1<=1) & (av_df$vir_6>=1)]
+switch_genes1 = intersect(pot_list1, V(v_6)$name)
+visPlot(v_6, high_nodes(v_6,switch_genes1), page_rank(v_6,directed=F)$vector)
+```
+
+
+```{r}
+#Switched OFF at Timestep 12 (Threshold = 1 FPKM)
+pot_list2 = av_df$Gene[(av_df$vir_6>=1) & (av_df$vir_12<1)]
+switch_genes2 = intersect(pot_list2, V(v_6)$name)
+visPlot(v_6, high_nodes(v_6,switch_genes2), page_rank(v_6,directed=F)$vector)
+```
+
+
+```{r}
+#Switched OFF at Timestep 6 but ON at timestep 1 (Threshold = 1 FPKM)
+pot_list3 = av_df$Gene[(av_df$vir_1>=1) & (av_df$vir_6<=1)]
+switch_genes3 = intersect(pot_list3, V(v_1)$name)
+visPlot(v_1, high_nodes(v_1,switch_genes3), page_rank(v_1,directed=F)$vector)
+```
+
+```{r}
+tlist1 = intersect(V(diff1)$name, av_df$Gene[(av_df$vir_6>=1) & (av_df$vir_1<1)])
+visPlot2(diff1, E(diff1)$type1, high_nodes(diff1,tlist1), nodesize = page_rank(diff1,directed=F)$vector)
+```
+
+```{r}
+tlist2 = intersect(V(diff2)$name, av_df$Gene[(av_df$vir_12>=1) & (av_df$vir_6<1)])
+visPlot2(diff2, E(diff2)$type1, high_nodes(diff2,tlist2), nodesize = page_rank(diff2,directed=F)$vector)
+```
+
+```{r}
+diff3 = diff_plot(v_1,v_12)
+tlist3 = intersect(V(diff3)$name, av_df$Gene[(av_df$vir_12>=1) & (av_df$vir_1<1)])
+visPlot2(diff3, E(diff3)$type1, high_nodes(diff3,tlist3), nodesize = page_rank(diff3,directed=F)$vector)
+```
+
+```{r}
+temp_df = data.frame(Gene = av_df$Gene, Value = av_df$mock_1)
+mock_1 = rest_subgraph(g, base, temp_df, 1)
+```
+
+```{r}
+temp_df = data.frame(Gene = av_df$Gene, Value = av_df$mock_6)
+mock_6 = rest_subgraph(g, base, temp_df, 1)
+```
+
+```{r}
+temp_df = data.frame(Gene = av_df$Gene, Value = av_df$mock_12)
+mock_12 = rest_subgraph(g, base, temp_df, 1)
+```
+
+```{r}
+#Virulent vs Mock (TS 1)
+mv_1 = diff_plot(v_1,mock_1)
+visPlot2(mv_1, E(mv_1)$type1, nodesize = page_rank(mv_1,directed=F)$vector)
+```
+
+```{r}
+#Virulent vs Mock (TS 6)
+mv_6 = diff_plot(v_6,mock_6)
+visPlot2(mv_6, E(mv_6)$type1, nodesize = page_rank(mv_6,directed=F)$vector)
+```
+
+```{r}
+#Virulent vs Mock (TS 12)
+mv_12 = diff_plot(v_12,mock_12)
+visPlot2(mv_12, E(mv_12)$type1, nodesize = page_rank(mv_12,directed=F)$vector)
+```
